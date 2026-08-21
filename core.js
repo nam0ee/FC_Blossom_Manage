@@ -97,12 +97,217 @@ function recordLocalBackup(){
     localStorage.setItem(BACKUP_KEY,JSON.stringify(arr));
   }catch(e){ console.warn('로컬 백업 저장 실패',e); }
 }
+let lastSavedDb = JSON.parse(JSON.stringify(db));
+
+function getEditorName(){
+  let name = localStorage.getItem('fc_blossom_editor_name') || '';
+
+  if(!name){
+    name = prompt('수정자 이름을 입력해주세요.') || '';
+    name = name.trim();
+
+    if(name){
+      localStorage.setItem('fc_blossom_editor_name', name);
+    }
+  }
+
+  return name || '이름없음';
+}
+
+function changeEditorName(){
+  const oldName = localStorage.getItem('fc_blossom_editor_name') || '';
+  const name = prompt('수정자 이름을 입력해주세요.', oldName);
+
+  if(name !== null && name.trim()){
+    localStorage.setItem('fc_blossom_editor_name', name.trim());
+    alert('수정자 이름이 ' + name.trim() + '(으)로 변경되었습니다.');
+  }
+}
+
+function summarizeChanges(oldDb, newDb){
+  const changes = [];
+
+  // 출석 / 훈련일
+  const oldSessions = new Map(
+    (oldDb.sessions || []).map(x => [x.date, x])
+  );
+
+  const newSessions = new Map(
+    (newDb.sessions || []).map(x => [x.date, x])
+  );
+
+  const sessionDates = new Set([
+    ...oldSessions.keys(),
+    ...newSessions.keys()
+  ]);
+
+  sessionDates.forEach(date => {
+    const oldS = oldSessions.get(date);
+    const newS = newSessions.get(date);
+
+    if(JSON.stringify(oldS) === JSON.stringify(newS)) return;
+
+    if(!oldS && newS){
+      changes.push({
+        category:'출석/훈련',
+        detail:`${date} 기록 추가`
+      });
+      return;
+    }
+
+    if(oldS && !newS){
+      changes.push({
+        category:'출석/훈련',
+        detail:`${date} 기록 삭제`
+      });
+      return;
+    }
+
+    if(oldS?.status !== newS?.status){
+      changes.push({
+        category:'훈련일정',
+        detail:`${date} ${oldS?.status || '-'} → ${newS?.status || '-'}`
+      });
+    }
+
+    if(!!oldS?.instructor !== !!newS?.instructor){
+      changes.push({
+        category:'강사일',
+        detail:`${date} ${oldS?.instructor ? '강사일' : '일반'} → ${newS?.instructor ? '강사일' : '일반'}`
+      });
+    }
+
+    const oldAtt = new Set(oldS?.attendees || []);
+    const newAtt = new Set(newS?.attendees || []);
+
+    [...newAtt]
+      .filter(n => !oldAtt.has(n))
+      .forEach(n => changes.push({
+        category:'출석',
+        detail:`${date} ${n} 출석 추가`
+      }));
+
+    [...oldAtt]
+      .filter(n => !newAtt.has(n))
+      .forEach(n => changes.push({
+        category:'출석',
+        detail:`${date} ${n} 출석 취소`
+      }));
+  });
+
+  // 회원 상태
+  const statusNames = new Set([
+    ...Object.keys(oldDb.memberStatus || {}),
+    ...Object.keys(newDb.memberStatus || {})
+  ]);
+
+  statusNames.forEach(name => {
+    const oldType = oldDb.memberStatus?.[name]?.type || '일반';
+    const newType = newDb.memberStatus?.[name]?.type || '일반';
+
+    if(oldType !== newType){
+      changes.push({
+        category:'회원상태',
+        detail:`${name} ${oldType} → ${newType}`
+      });
+    }
+  });
+
+  // 회원 추가/삭제
+  const oldMembers = new Set(oldDb.members || []);
+  const newMembers = new Set(newDb.members || []);
+
+  [...newMembers]
+    .filter(n => !oldMembers.has(n))
+    .forEach(n => changes.push({
+      category:'회원',
+      detail:`${n} 회원 추가`
+    }));
+
+  [...oldMembers]
+    .filter(n => !newMembers.has(n))
+    .forEach(n => changes.push({
+      category:'회원',
+      detail:`${n} 회원 삭제`
+    }));
+
+  // 역할 수행
+  if(JSON.stringify(oldDb.roleLogs || []) !== JSON.stringify(newDb.roleLogs || [])){
+    changes.push({
+      category:'역할수행',
+      detail:'조끼/음료수 수행 기록 변경'
+    });
+  }
+
+  // 역할 배정
+  if(JSON.stringify(oldDb.roles || {}) !== JSON.stringify(newDb.roles || {})){
+    changes.push({
+      category:'역할배정',
+      detail:'회원 역할 배정 변경'
+    });
+  }
+
+  // 출석왕 기간
+  if(JSON.stringify(oldDb.winnerPeriods || []) !== JSON.stringify(newDb.winnerPeriods || [])){
+    changes.push({
+      category:'출석왕',
+      detail:'출석왕 기간 설정 변경'
+    });
+  }
+
+  // 명예의전당
+  if(JSON.stringify(oldDb.hallOfFame || {}) !== JSON.stringify(newDb.hallOfFame || {})){
+    changes.push({
+      category:'명예의전당',
+      detail:'명예의전당 기록 변경'
+    });
+  }
+
+  return changes;
+}
+
+function addChangeHistory(changes){
+  if(!changes.length) return;
+
+  if(!Array.isArray(db.changeHistory)){
+    db.changeHistory = [];
+  }
+
+  const editor = getEditorName();
+  const now = new Date().toISOString();
+
+  changes.forEach(change => {
+    db.changeHistory.unshift({
+      id: crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random()}`,
+      savedAt: now,
+      editor,
+      category: change.category,
+      detail: change.detail
+    });
+  });
+
+  // 너무 무한정 늘어나지 않도록 최근 1000개
+  if(db.changeHistory.length > 1000){
+    db.changeHistory = db.changeHistory.slice(0,1000);
+  }
+}
 let hasUnsavedChanges=false;
 function persist(){
   hasUnsavedChanges=true;
   setSyncState('⚠ 저장되지 않은 변경사항 있음');
 }
 async function saveAllChanges(){
+  const changes = summarizeChanges(lastSavedDb, db);
+
+  if(!changes.length){
+    alert('변경된 내용이 없습니다.');
+    return;
+  }
+
+  addChangeHistory(changes);
+
   recordLocalBackup();
 
   const stamp=()=>new Date().toLocaleTimeString(
@@ -123,6 +328,7 @@ async function saveAllChanges(){
 
     cloudReady=true;
     hasUnsavedChanges=false;
+    lastSavedDb = JSON.parse(JSON.stringify(db));
 
     setSyncState('✅ 공용 데이터 저장 완료 '+stamp());
 
@@ -194,6 +400,7 @@ async function loadCloud(){
 
     cloudReady=true;
     hasUnsavedChanges=false;
+    lastSavedDb = JSON.parse(JSON.stringify(db));
 
     setSyncState('✅ 공용 데이터 연결됨');
 
