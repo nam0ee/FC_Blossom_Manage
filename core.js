@@ -1,7 +1,32 @@
 function makeImportedDb(){
  return {dataVersion:DATA_VERSION,members:JSON.parse(JSON.stringify(defaultMembers)),sessions:JSON.parse(JSON.stringify(importedSessions)),memberStatus:JSON.parse(JSON.stringify(importedMemberStatus)),roles:JSON.parse(JSON.stringify(roleDefaults)),roleLogs:JSON.parse(JSON.stringify(importedRoleLogs)),hallOfFame:JSON.parse(JSON.stringify(hallDefaults)),legacyAttendanceTotals:JSON.parse(JSON.stringify(legacyAttendanceTotals)),winnerPeriods:JSON.parse(JSON.stringify(winnerPeriodDefaults)),winnerHistory:JSON.parse(JSON.stringify(winnerHistoryDefaults)),importedExcel:true};
 }
+function renderChangeHistory(){
+  const el = document.getElementById('changeHistoryRows');
+  if(!el) return;
 
+  const rows = db.changeHistory || [];
+
+  if(!rows.length){
+    el.innerHTML =
+      '<tr><td colspan="4" class="muted">아직 변경이력이 없습니다.</td></tr>';
+    return;
+  }
+
+  el.innerHTML = rows.map(x => {
+
+    const d = new Date(x.savedAt);
+
+    return `
+      <tr>
+        <td>${d.toLocaleString('ko-KR')}</td>
+        <td><b>${x.editor || '-'}</b></td>
+        <td>${x.category || '-'}</td>
+        <td>${x.detail || '-'}</td>
+      </tr>
+    `;
+  }).join('');
+}
 function migrateDb(data){
   const fresh=makeImportedDb();
   if(!data) return fresh;
@@ -423,7 +448,7 @@ async function loadCloud(){
   }
 }
 
-function renderAll(){ renderMemberStatus(); renderRoles(); renderRoleLogs(); renderAttendanceMatrix(); renderCalendar(); renderSessions(); renderWinnerPeriods(); renderWinnerHistory(); renderWinner(); renderFees(); renderHallOfFame(); renderLegacyAttendance(); }
+function renderAll(){ renderMemberStatus(); renderRoles(); renderRoleLogs(); renderAttendanceMatrix(); renderCalendar(); renderSessions(); renderWinnerPeriods(); renderWinnerHistory(); renderWinner(); renderFees(); renderHallOfFame(); renderLegacyAttendance(); renderChangeHistory();}
 
 function renderLegacyAttendance(){
  const el=document.getElementById('legacyAttendanceSummary'); if(!el)return;
@@ -476,7 +501,7 @@ function init(){
   loadCloud();
 }
 
-function showMainPane(id,btn){document.querySelectorAll('.main-pane').forEach(x=>x.classList.remove('active'));document.querySelectorAll('#mainNav button').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');if(id==='attendancePane')renderAttendanceMatrix();if(id==='rolePane')renderRoleMatrix();if(id==='winnerFeePane'){renderWinner();renderFees();}if(id==='hofPane')renderHallOfFame();}
+function showMainPane(id,btn){document.querySelectorAll('.main-pane').forEach(x=>x.classList.remove('active'));document.querySelectorAll('#mainNav button').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');if(id==='attendancePane')renderAttendanceMatrix();if(id==='rolePane')renderRoleMatrix();if(id==='winnerFeePane'){renderWinner();renderFees();}if(id==='hofPane')renderHallOfFame(); if(id==='historyPane') renderChangeHistory();}
 function showTab(id,btn){const set=btn.closest('.tabset');set.querySelectorAll('.tabpane').forEach(x=>x.classList.remove('active'));set.querySelectorAll('.tabbtn').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');btn.classList.add('active');if(id==='calendarTab')renderCalendar();if(id==='inputTab')renderAttendanceMatrix();if(id==='roleLogTab')renderRoleMatrix();}
 function moveCalendar(delta){calendarCursor=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+delta,1);renderCalendar();}
 function moveRoleMonth(delta){
