@@ -18,6 +18,7 @@
     <button onclick="showMainPane('rolePane',this)">역할 관리</button>
     <button onclick="showMainPane('hofPane',this)">🏆 2026 명예의전당</button>
     <button onclick="showMainPane('dataPane',this)">데이터 · 백업</button>
+    <button onclick="showMainPane('historyPane',this)">변경이력</button>
   </div>
   <div class="grid" style="margin-top:16px">
     <section class="card main-pane active" id="attendancePane">
@@ -66,7 +67,32 @@
       </div>
       </div>
     </section>
+    <section id="historyPane" class="main-pane">
+  <div class="card">
+    <h2>📝 변경이력</h2>
 
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:15px;">
+      <button onclick="changeEditorName()">수정자 이름 변경</button>
+      <span class="muted">
+        저장 버튼을 누른 시점의 변경내용이 기록됩니다.
+      </span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>저장시간</th>
+            <th>수정자</th>
+            <th>구분</th>
+            <th>변경내용</th>
+          </tr>
+        </thead>
+        <tbody id="changeHistoryRows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
     <section class="card main-pane" id="rolePane">
       <h2 style="margin-top:0">역할 관리</h2>
       <div class="tabset" id="roleTabs">
