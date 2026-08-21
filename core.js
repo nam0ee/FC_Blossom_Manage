@@ -38,6 +38,52 @@ if(!db.hallOfFame) db.hallOfFame=JSON.parse(JSON.stringify(hallDefaults));
 if(!db.legacyAttendanceTotals) db.legacyAttendanceTotals=JSON.parse(JSON.stringify(legacyAttendanceTotals));
 if(!db.winnerPeriods) db.winnerPeriods=JSON.parse(JSON.stringify(winnerPeriodDefaults));
 if(!db.winnerHistory) db.winnerHistory=JSON.parse(JSON.stringify(winnerHistoryDefaults));
+const SUPABASE_URL = 'https://ycifmorjogyihcdhwvye.supabase.co/rest/v1/';
+const SUPABASE_KEY = 'sb_publishable_cknai1l2sf54LHXQ-_56vA_zhnoJnIw';
+
+const SUPABASE_TABLE = 'fc_blossom_data';
+const SUPABASE_ROW_ID = 1;
+
+async function supabaseLoadDatabase(){
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${SUPABASE_ROW_ID}&select=data,updated_at`,
+    {
+      headers:{
+        'apikey': SUPABASE_KEY,
+        'Accept':'application/json'
+      }
+    }
+  );
+
+  if(!res.ok){
+    throw new Error(`Supabase load failed: ${res.status}`);
+  }
+
+  const rows = await res.json();
+  return rows?.[0]?.data || null;
+}
+
+async function supabaseSaveDatabase(data){
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${SUPABASE_ROW_ID}`,
+    {
+      method:'PATCH',
+      headers:{
+        'apikey': SUPABASE_KEY,
+        'Content-Type':'application/json',
+        'Prefer':'return=minimal'
+      },
+      body:JSON.stringify({
+        data:data,
+        updated_at:new Date().toISOString()
+      })
+    }
+  );
+
+  if(!res.ok){
+    throw new Error(`Supabase save failed: ${res.status}`);
+  }
+}
 let cloudReady = false;
 const BACKUP_KEY=KEY+'_auto_backups';
 function makeBackupSnapshot(){
@@ -56,42 +102,120 @@ function persist(){
   hasUnsavedChanges=true;
   setSyncState('⚠ 저장되지 않은 변경사항 있음');
 }
-function saveAllChanges(){
+async function saveAllChanges(){
   recordLocalBackup();
-  localStorage.setItem(KEY,JSON.stringify(db));
-  const stamp=()=>new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+  const stamp=()=>new Date().toLocaleTimeString(
+    'ko-KR',
+    {
+      hour:'2-digit',
+      minute:'2-digit',
+      second:'2-digit'
+    }
+  );
+
   setSyncState('저장 중...');
-  if(window.google && google.script && google.script.run){
-    google.script.run
-      .withSuccessHandler(()=>{ cloudReady=true; hasUnsavedChanges=false; setSyncState('✅ 저장 완료 '+stamp()); })
-      .withFailureHandler(err=>{ hasUnsavedChanges=false; setSyncState('⚠ 클라우드 저장 실패 · 이 브라우저에는 저장됨 '+stamp()); alert('클라우드 저장에 실패했습니다. 인터넷 연결을 확인해주세요.'); })
-      .saveDatabase(JSON.stringify(db));
-  }else{
+
+  try{
+    await supabaseSaveDatabase(db);
+
+    localStorage.setItem(KEY,JSON.stringify(db));
+
+    cloudReady=true;
     hasUnsavedChanges=false;
-    setSyncState('✅ 이 브라우저에 저장 완료 '+stamp());
+
+    setSyncState('✅ 공용 데이터 저장 완료 '+stamp());
+
+  }catch(err){
+    console.error(err);
+
+    setSyncState('❌ 저장 실패');
+
+    alert(
+      '공용 데이터 저장에 실패했습니다.\n' +
+      '인터넷 연결 또는 Supabase 설정을 확인해주세요.'
+    );
   }
 }
+
 
 window.addEventListener('beforeunload',e=>{if(hasUnsavedChanges){e.preventDefault();e.returnValue='';}});
 
 function setSyncState(msg){
   const el=document.getElementById('syncState'); if(el) el.textContent=msg;
 }
-function loadCloud(){
-  if(!(window.google && google.script && google.script.run)){ setSyncState('로컬 모드'); return; }
-  setSyncState('클라우드 불러오는 중...');
-  google.script.run
-    .withSuccessHandler(raw=>{
-      try{
-        if(raw){ const remote=JSON.parse(raw); if(Array.isArray(remote.sessions)){ if((remote.sessions||[]).length===0 && !remote.importedExcel){ db=makeImportedDb(); members=db.members||defaultMembers; persist(); } else { db=migrateDb(remote); members=db.members||defaultMembers; localStorage.setItem(KEY,JSON.stringify(db)); } if(!db.memberStatus) db.memberStatus={}; if(!db.roles) db.roles=JSON.parse(JSON.stringify(roleDefaults)); if(!db.roleLogs) db.roleLogs=[];
-if(!db.hallOfFame) db.hallOfFame=JSON.parse(JSON.stringify(hallDefaults));
-if(!db.legacyAttendanceTotals) db.legacyAttendanceTotals=JSON.parse(JSON.stringify(legacyAttendanceTotals)); if(!db.winnerPeriods) db.winnerPeriods=JSON.parse(JSON.stringify(winnerPeriodDefaults)); if(!db.winnerHistory) db.winnerHistory=JSON.parse(JSON.stringify(winnerHistoryDefaults)); localStorage.setItem(KEY,JSON.stringify(db)); } }
-        cloudReady=true; setSyncState('클라우드 연결됨'); renderAll();
-      }catch(e){ setSyncState('데이터 읽기 오류'); renderAll(); }
-    })
-    .withFailureHandler(err=>{ setSyncState('클라우드 연결 실패 - 로컬 모드'); renderAll(); })
-    .getDatabase();
+async function loadCloud(){
+
+  setSyncState('공용 데이터 불러오는 중...');
+
+  try{
+
+    const remote = await supabaseLoadDatabase();
+
+    if(remote && Array.isArray(remote.sessions)){
+
+      db=migrateDb(remote);
+
+    }else{
+
+      // Supabase가 아직 빈 상태라면
+      // 현재 기본 엑셀 복원 데이터를 최초 데이터로 사용
+      db=makeImportedDb();
+
+      await supabaseSaveDatabase(db);
+    }
+
+    members=db.members||defaultMembers;
+
+    if(!db.memberStatus) db.memberStatus={};
+
+    if(!db.roles)
+      db.roles=JSON.parse(JSON.stringify(roleDefaults));
+
+    if(!db.roleLogs)
+      db.roleLogs=[];
+
+    if(!db.hallOfFame)
+      db.hallOfFame=JSON.parse(JSON.stringify(hallDefaults));
+
+    if(!db.legacyAttendanceTotals)
+      db.legacyAttendanceTotals=
+        JSON.parse(JSON.stringify(legacyAttendanceTotals));
+
+    if(!db.winnerPeriods)
+      db.winnerPeriods=
+        JSON.parse(JSON.stringify(winnerPeriodDefaults));
+
+    if(!db.winnerHistory)
+      db.winnerHistory=
+        JSON.parse(JSON.stringify(winnerHistoryDefaults));
+
+    localStorage.setItem(KEY,JSON.stringify(db));
+
+    cloudReady=true;
+    hasUnsavedChanges=false;
+
+    setSyncState('✅ 공용 데이터 연결됨');
+
+    renderAll();
+
+  }catch(err){
+
+    console.error(err);
+
+    cloudReady=false;
+
+    setSyncState('❌ 공용 데이터 연결 실패');
+
+    alert(
+      'Supabase 공용 데이터를 불러오지 못했습니다.\n' +
+      '현재 화면은 수정하지 말고 연결 설정을 확인해주세요.'
+    );
+
+    renderAll();
+  }
 }
+
 function renderAll(){ renderMemberStatus(); renderRoles(); renderRoleLogs(); renderAttendanceMatrix(); renderCalendar(); renderSessions(); renderWinnerPeriods(); renderWinnerHistory(); renderWinner(); renderFees(); renderHallOfFame(); renderLegacyAttendance(); }
 
 function renderLegacyAttendance(){
