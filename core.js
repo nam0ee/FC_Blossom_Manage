@@ -38,7 +38,7 @@ if(!db.hallOfFame) db.hallOfFame=JSON.parse(JSON.stringify(hallDefaults));
 if(!db.legacyAttendanceTotals) db.legacyAttendanceTotals=JSON.parse(JSON.stringify(legacyAttendanceTotals));
 if(!db.winnerPeriods) db.winnerPeriods=JSON.parse(JSON.stringify(winnerPeriodDefaults));
 if(!db.winnerHistory) db.winnerHistory=JSON.parse(JSON.stringify(winnerHistoryDefaults));
-const SUPABASE_URL = 'https://ycifmorjogyihcdhwvye.supabase.co/rest/v1/';
+const SUPABASE_URL = 'https://ycifmorjogyihcdhwvye.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_cknai1l2sf54LHXQ-_56vA_zhnoJnIw';
 
 const SUPABASE_TABLE = 'fc_blossom_data';
