@@ -11,7 +11,7 @@
 <body>
 <header><h1>사내동아리 출석 · 출석왕 · 회비 관리</h1><p>체크 후 저장 버튼으로 반영 · 탭형 화면 · 기간별 출석왕 · 강사일 1.5점 · 2개월 회비 자동 계산 · <span id="syncState">연결 준비 중</span></p></header>
 <main>
-  <div class="notice"><b>기존 엑셀 초기값 적용됨</b> · 출석 누적값, 2026.07 역할, 확인 가능한 조끼/음료수 수행기록, 2026 명예의전당 값을 넣었습니다.<br><br>이 버전은 <b>Google Sheets 공용 저장</b>을 지원합니다. 같은 웹주소로 접속한 사람들은 동일한 출석/회비 데이터를 봅니다. 브라우저에도 마지막 저장본이 남아 네트워크 오류 시 화면이 유지됩니다. 변경사항은 저장 버튼을 눌러야 반영됩니다.</div>
+  <div class="notice"><b>기존 엑셀 초기값 적용됨</b> · 출석 누적값, 2026.07 역할, 확인 가능한 조끼/음료수 수행기록, 2026 명예의전당 값을 넣었습니다.<br><br>이 버전은 <b>Supabase 공용 저장</b>을 사용합니다. 같은 웹주소로 접속한 사람들은 동일한 출석/회비 데이터를 봅니다. 변경사항은 저장 버튼을 눌러야 공용 데이터에 반영됩니다.</div>
   <div class="main-nav" id="mainNav">
     <button class="active" onclick="showMainPane('attendancePane',this)">출석 관리</button>
     <button onclick="showMainPane('winnerFeePane',this)">출석왕 · 회비</button>
