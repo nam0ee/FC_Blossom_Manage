@@ -1,1 +1,164 @@
-<h1>FC Blossom 테스트</h1>
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>2026 사내동아리 출석/회비/역할 관리</title>
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+</head>
+<body>
+<header><h1>사내동아리 출석 · 출석왕 · 회비 관리</h1><p>체크 후 저장 버튼으로 반영 · 탭형 화면 · 기간별 출석왕 · 강사일 1.5점 · 2개월 회비 자동 계산 · <span id="syncState">연결 준비 중</span></p></header>
+<main>
+  <div class="notice"><b>기존 엑셀 초기값 적용됨</b> · 출석 누적값, 2026.07 역할, 확인 가능한 조끼/음료수 수행기록, 2026 명예의전당 값을 넣었습니다.<br><br>이 버전은 <b>Google Sheets 공용 저장</b>을 지원합니다. 같은 웹주소로 접속한 사람들은 동일한 출석/회비 데이터를 봅니다. 브라우저에도 마지막 저장본이 남아 네트워크 오류 시 화면이 유지됩니다. 변경사항은 저장 버튼을 눌러야 반영됩니다.</div>
+  <div class="main-nav" id="mainNav">
+    <button class="active" onclick="showMainPane('attendancePane',this)">출석 관리</button>
+    <button onclick="showMainPane('winnerFeePane',this)">출석왕 · 회비</button>
+    <button onclick="showMainPane('rolePane',this)">역할 관리</button>
+    <button onclick="showMainPane('hofPane',this)">🏆 2026 명예의전당</button>
+    <button onclick="showMainPane('dataPane',this)">데이터 · 백업</button>
+  </div>
+  <div class="grid" style="margin-top:16px">
+    <section class="card main-pane active" id="attendancePane">
+      <h2 style="margin-top:0">출석 · 회원 관리</h2>
+      <div class="tabset" id="attendanceTabs">
+      <div class="tabs"><button class="tabbtn active" onclick="showTab('inputTab',this)">출석 입력</button><button class="tabbtn" onclick="showTab('calendarTab',this)">달력 보기</button><button class="tabbtn" onclick="showTab('memberTab',this)">회원 상태</button></div>
+      <div id="inputTab" class="tabpane active"><div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="primary" onclick="saveAllChanges()">💾 출석 저장</button></div>
+      <h2>1. 월간 출석표</h2>
+      <p class="muted">역할 수행표처럼 사람 × 날짜 표로 입력합니다. 빈 칸을 누르면 <b>출석 ✓</b>, 다시 누르면 미출석으로 바뀌고 바로 저장됩니다. 취소일은 회색으로 표시되어 출석 입력이 막힙니다.</p>
+      <div class="row" style="margin-bottom:10px">
+        <button onclick="moveAttendanceMonth(-1)">◀ 이전달</button>
+        <label><b>월</b> <input id="attendanceMatrixMonth" type="month" onchange="renderAttendanceMatrix()" /></label>
+        <button onclick="moveAttendanceMonth(1)">다음달 ▶</button>
+        <span class="muted">월·목요일 자동 표시 + 기존 등록일 포함 · 🎓 강사일은 출석 1.5점</span>
+      </div>
+      <div id="attendanceMatrixInfo" class="muted" style="margin-bottom:8px"></div>
+      <div id="attendanceMatrixWrap" class="matrix-wrap"></div>
+      </div>
+      <div id="calendarTab" class="tabpane">
+        <h2>월간 출석 달력</h2>
+        <div class="calendar-head"><button onclick="moveCalendar(-1)">◀ 이전달</button><b id="calendarTitle"></b><button onclick="moveCalendar(1)">다음달 ▶</button></div>
+        <div class="calendar" id="calendarGrid"></div>
+        <p class="muted">날짜를 클릭하면 그 자리에서 <b>훈련 진행 / 취소 / 강사님 방문</b>을 설정할 수 있습니다. 2026 대한민국 공휴일과 패밀리데이은 자동으로 <b>훈련없음</b> 표시됩니다. 출석 입력은 별도의 출석 입력 탭에서 합니다.</p>
+        <dialog id="calendarDateDialog" style="border:0;border-radius:16px;padding:0;max-width:560px;width:calc(100% - 32px);box-shadow:0 20px 60px #0004">
+          <div style="padding:20px">
+            <div class="row" style="justify-content:space-between"><h3 style="margin:0">날짜 설정</h3><button onclick="calendarDateDialog.close()">닫기</button></div>
+            <div class="row" style="margin-top:16px">
+              <input id="sessionDate" type="date" readonly />
+              <select id="sessionStatus"><option value="train">훈련 진행</option><option value="cancel">훈련 취소</option></select>
+            </div>
+            <label class="pill" style="cursor:pointer;display:inline-block;margin-top:12px"><input id="sessionInstructor" type="checkbox" style="margin-right:5px"> 🎓 강사님 오시는 날 (출석 1.5)</label>
+            <div style="margin-top:12px"><input id="sessionMemo" type="text" placeholder="메모 (우천, 폭염, 휴식 등)" style="width:100%" /></div>
+            <div style="margin-top:14px"><b>이날 출석자</b><div id="calendarAttendeeList" class="role-grid" style="margin-top:8px"></div></div>
+            <div class="row" style="margin-top:16px">
+              <button class="primary" onclick="saveSessionMeta(true)">저장</button>
+              <button onclick="goAttendanceFromCalendar()">이 날짜 출석 입력</button>
+            </div>
+          </div>
+        </dialog>
+      </div>
+      <div id="memberTab" class="tabpane">
+        <h2>회원 관리 · 상태 · 회비 0원</h2>
+        <p class="muted">새 회원을 추가하거나 현재 회원을 삭제할 수 있습니다. 삭제해도 과거 출석/역할 기록은 보존됩니다. 임원진/출장(파견)/부상/기타로 지정된 회원은 회비가 0원으로 계산됩니다. 일반으로 변경하면 다시 일반 회비 기준이 적용됩니다.</p>
+        <div class="row" style="margin:12px 0"><input id="newMemberName" type="text" placeholder="새 회원 이름 (예: 홍길동(동2))" style="min-width:260px"><button class="primary" onclick="addMember()">회원 추가</button></div>
+        <div class="row" style="margin:8px 0 12px"><button class="primary" onclick="saveAllChanges()">💾 회원 변경 저장</button></div><div class="table-wrap"><table><thead><tr><th>회원</th><th>상태</th><th>관리</th></tr></thead><tbody id="memberStatusRows"></tbody></table></div>
+      </div>
+      </div>
+    </section>
+
+    <section class="card main-pane" id="rolePane">
+      <h2 style="margin-top:0">역할 관리</h2>
+      <div class="tabset" id="roleTabs">
+        <div class="tabs"><button class="tabbtn active" onclick="showTab('roleLogTab',this)">역할 수행 기록</button><button class="tabbtn" onclick="showTab('roleTab',this)">역할 배정</button></div>
+      <div id="roleTab" class="tabpane"><div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="primary" onclick="saveAllChanges()">💾 역할 배정 저장</button></div>
+        <h2>역할 관리</h2>
+        <p class="muted">2026년 7월 역할표를 기본값으로 넣었습니다. ★는 해당 역할 책임자입니다.</p>
+        <div class="table-wrap"><table><thead><tr><th>회원</th><th>★</th><th>역할</th><th>비고</th></tr></thead><tbody id="roleRows"></tbody></table></div>
+      </div>
+      <div id="roleLogTab" class="tabpane active"><div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="primary" onclick="saveAllChanges()">💾 역할 수행 저장</button></div>
+        <h2>역할 수행표</h2>
+        <p class="muted">역할 수행 기록은 <b>조끼와 음료수만</b> 관리합니다. 칸을 클릭하면 <b>빈칸 → ✓ 완료 → ✕ 미완료 → 빈칸</b> 순서로 바뀝니다. 변경 후 위의 <b>역할 수행 저장</b> 버튼을 눌러야 실제 데이터에 저장됩니다.</p>
+        <div class="row" style="margin-bottom:10px">
+          <button onclick="moveRoleMonth(-1)">◀ 이전달</button>
+          <label><b>월</b> <input id="roleMatrixMonth" type="month" onchange="renderRoleMatrix()" /></label>
+          <button onclick="moveRoleMonth(1)">다음달 ▶</button>
+          <div class="view-toggle row">
+            <button id="roleViewSingle" class="active" onclick="setRoleMatrixView('single')">역할별 보기</button>
+            <button id="roleViewAll" onclick="setRoleMatrixView('all')">전체 역할 보기</button>
+          </div>
+          <select id="roleMatrixRole" onchange="renderRoleMatrix()"></select>
+        </div>
+        <div id="roleMatrixInfo" class="muted" style="margin-bottom:8px"></div>
+        <div id="roleMatrixWrap" class="matrix-wrap"></div>
+        <h3>월간 수행 요약</h3>
+        <div id="roleSummary" class="role-grid"></div>
+        <h3>기록 필터</h3>
+        <div class="row" style="margin-bottom:10px"><select id="roleFilter" onchange="renderRoleLogs()"><option value="">전체 역할</option></select><select id="personFilter" onchange="renderRoleLogs()"><option value="">전체 사람</option></select></div>
+        <div class="table-wrap"><table><thead><tr><th>날짜</th><th>역할</th><th>담당</th><th>결과</th><th>메모</th><th></th></tr></thead><tbody id="roleLogRows"></tbody></table></div>
+      </div>
+      </div>
+    </section>
+
+    <section class="card main-pane" id="winnerFeePane"><div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="primary" onclick="saveAllChanges()">💾 출석왕 설정 저장</button></div>
+      <h2>2. 기간별 출석왕</h2>
+      <div class="notice" style="margin-bottom:10px">출석왕은 <b>설정한 기간</b>의 출석 점수로 계산합니다. 일반 훈련일 출석은 1점, 🎓 강사님 방문일 출석은 1.5점입니다. 허준영은 후보에서 제외되고, 한 번 선정되면 이후 <b>3개 출석왕 기간</b> 동안 재선정되지 않습니다.</div>
+      <div class="row">
+        <button onclick="moveWinnerPeriod(-1)">◀ 이전기간</button>
+        <select id="winnerPeriodSelect" onchange="renderWinner()"></select>
+        <button onclick="moveWinnerPeriod(1)">다음기간 ▶</button>
+        <button onclick="renderWinner()">계산</button>
+      </div>
+      <div style="margin-top:18px" class="winner" id="winnerName">-</div>
+      <div class="muted" id="winnerReason">기간을 선택하세요.</div>
+      <div id="winnerRanking" style="margin-top:14px"></div>
+
+      <h3 style="margin-top:22px">출석왕 기간 설정</h3>
+      <div class="row">
+        <input id="periodLabel" type="month" />
+        <input id="periodStart" type="date" />
+        <span>~</span>
+        <input id="periodEnd" type="date" />
+        <button class="primary" onclick="saveWinnerPeriod()">기간 추가/수정</button>
+      </div>
+      <p class="muted">예: 2026.09 출석왕 기간을 8/31~9/21처럼 자유롭게 설정할 수 있습니다.</p>
+      <div class="table-wrap" style="max-height:240px"><table><thead><tr><th>월</th><th>기간</th><th>설정</th></tr></thead><tbody id="winnerPeriodRows"></tbody></table></div>
+
+      <h3 style="margin-top:22px">역대 출석왕</h3>
+      <div class="table-wrap" style="max-height:340px"><table><thead><tr><th>월</th><th>기간</th><th>이름</th><th>출석</th><th>훈련 횟수</th></tr></thead><tbody id="winnerHistoryRows"></tbody></table></div>
+      <h2 style="margin-top:24px">3. 격월 회비</h2>
+      <div class="notice" style="margin-bottom:10px">김나정 · 최연우 · 이채영 · 정남영 · 허준영은 2026년 회비(급여공제) 0원 고정입니다.</div><div class="row"><button onclick="moveFeePeriod(-1)">◀ 이전기간</button><select id="feePeriod"></select><button onclick="moveFeePeriod(1)">다음기간 ▶</button><button onclick="renderFees()">계산</button></div>
+      <div class="stat" style="margin-top:12px">
+        <div><span class="muted">총 훈련</span><b id="feeSessions">0회</b></div>
+        <div><span class="muted">할인 기준</span><b id="feeThreshold">0회 초과</b></div>
+        <div><span class="muted">기간</span><b id="feeRange" style="font-size:15px">-</b></div>
+      </div>
+      <div id="feeTable" style="margin-top:12px"></div>
+    </section>
+
+    <section class="card full main-pane" id="hofPane"><div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="primary" onclick="saveAllChanges()">💾 명예의전당 저장</button></div>
+      <div class="hof-hero"><div><div class="hof-title">🏆 2026 명예의전당</div><div class="muted">항목별 횟수를 입력하면 총점과 순위가 자동 계산됩니다.</div></div><button onclick="renderHallOfFame()">순위 새로고침</button></div>
+      <div class="hof-conditions"><span class="pill">볼마스터리 챌린지 ×1</span><span class="pill">빙고 ×1</span><span class="pill">자체전 우승 ×1</span><span class="pill">출석왕 2회 이상 ×1</span><span class="pill">대회 참가 ×1</span><span class="pill double">대회 수상(1·2·3위) ×2</span></div>
+      <div id="hofTop3" class="hof-top3"></div>
+      <div class="table-wrap" style="max-height:620px"><table><thead><tr><th>순위</th><th>이름</th><th>명예의전당 횟수</th><th>볼마스터리</th><th>빙고</th><th>자체전 우승</th><th>출석왕 2회 이상</th><th>대회 참가</th><th>대회 수상 ×2</th></tr></thead><tbody id="hofRows"></tbody></table></div>
+    </section>
+
+    <section class="card full main-pane" id="dataPane">
+      <h2>기존 2026 엑셀 출석 누적값</h2>
+      <p class="muted">처음 보내주신 엑셀의 <b>참석일수</b>를 초기값으로 보존했습니다. 최근 8월 기록과 역할/명예의전당 값도 함께 초기 데이터에 적용되어 있습니다.</p>
+      <div id="legacyAttendanceSummary" class="role-grid"></div>
+
+    <div style="border-top:1px solid var(--line);margin:24px 0 18px"></div>
+      <h2>5. 훈련 기록</h2>
+      <div class="row" style="margin-bottom:10px"><button class="primary" onclick="saveAllChanges()">💾 기록 변경 저장</button><button onclick="exportExcel()">📗 엑셀로 추출하기</button></div><p class="muted">파일명은 <b>FC_Blossom_Manage.xlsx</b>입니다. 현재 데이터 전체, 최근 저장 백업 3회, 그리고 최신 HTML 소스까지 한 파일에 저장됩니다. 화면에서 변경한 값은 각 탭의 저장 버튼을 눌렀을 때만 실제 저장됩니다.</p>
+      <div class="table-wrap"><table><thead><tr><th>날짜</th><th>상태</th><th>참석 인원</th><th>메모</th><th></th></tr></thead><tbody id="sessionRows"></tbody></table></div>
+    </section>
+  </div>
+</main>
+<script src="data.js"></script>
+<script src="core.js"></script>
+<script src="roles.js"></script>
+<script src="attendance.js"></script>
+<script src="winner_fee_hof.js"></script>
+<script src="export.js"></script>
+</body></html>
