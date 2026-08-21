@@ -1,0 +1,43 @@
+function fmtScore(v){return Number.isInteger(Number(v))?String(Number(v)):String(Number(v).toFixed(1)).replace(/\.0$/,'')}
+function attendanceScoreForSession(s,member){return s?.status==='train'&&(s.attendees||[]).includes(member)?(s.instructor?1.5:1):0}
+function attendanceScoreInRange(member,start,end){return (db.sessions||[]).filter(s=>s.status==='train'&&s.date>=start&&s.date<=end).reduce((sum,s)=>sum+attendanceScoreForSession(s,member),0)}
+function trainCountInRange(start,end){return (db.sessions||[]).filter(s=>s.status==='train'&&s.date>=start&&s.date<=end).length}
+function baseName(full){return full.replace(/\(.+?\)$/,'')}
+function memberByBase(name){return members.find(m=>baseName(m)===name)||name}
+function sortedWinnerPeriods(){return [...(db.winnerPeriods||[])].sort((a,b)=>a.label.localeCompare(b.label))}
+function winnerHistoryMap(){return Object.fromEntries((db.winnerHistory||[]).map(x=>[x.label,x]))}
+function renderWinnerPeriods(){
+  if(!db.winnerPeriods)db.winnerPeriods=JSON.parse(JSON.stringify(winnerPeriodDefaults));
+  const periods=sortedWinnerPeriods(),sel=document.getElementById('winnerPeriodSelect');
+  if(sel){const old=sel.value;sel.innerHTML=periods.map(p=>`<option value="${p.label}">${p.label.replace('-', '.')} · ${p.start}~${p.end}</option>`).join('');sel.value=periods.some(p=>p.label===old)?old:(periods.at(-1)?.label||'');}
+  const rows=document.getElementById('winnerPeriodRows');if(rows)rows.innerHTML=periods.map(p=>`<tr><td>${p.label.replace('-', '.')}</td><td>${p.start} ~ ${p.end}</td><td><button onclick="editWinnerPeriod('${p.label}')">수정</button> <button onclick="deleteWinnerPeriod('${p.label}')">삭제</button></td></tr>`).join('');
+}
+function saveWinnerPeriod(){const label=periodLabel.value,start=periodStart.value,end=periodEnd.value;if(!label||!start||!end){alert('월/시작일/종료일을 모두 입력하세요.');return}if(start>end){alert('시작일이 종료일보다 늦습니다.');return}if(!db.winnerPeriods)db.winnerPeriods=[];const cur=db.winnerPeriods.find(p=>p.label===label);if(cur){cur.start=start;cur.end=end}else db.winnerPeriods.push({label,start,end});db.winnerPeriods.sort((a,b)=>a.label.localeCompare(b.label));persist();saveAllChanges();renderWinnerPeriods();winnerPeriodSelect.value=label;renderWinner();}
+function editWinnerPeriod(label){const p=(db.winnerPeriods||[]).find(x=>x.label===label);if(!p)return;periodLabel.value=p.label;periodStart.value=p.start;periodEnd.value=p.end;}
+function deleteWinnerPeriod(label){if(!confirm(label+' 출석왕 기간 설정을 삭제할까요?'))return;db.winnerPeriods=(db.winnerPeriods||[]).filter(x=>x.label!==label);persist();renderWinnerPeriods();renderWinner();}
+function blockedWinnersForPeriod(label){const periods=sortedWinnerPeriods(),idx=periods.findIndex(p=>p.label===label),hist=winnerHistoryMap(),blocked=new Set(attendanceKingExcluded);for(let i=Math.max(0,idx-3);i<idx;i++){const w=hist[periods[i].label]?.winner;if(w)blocked.add(memberByBase(w))}return blocked}
+function calculateWinnerForPeriod(label){const p=(db.winnerPeriods||[]).find(x=>x.label===label);if(!p)return null;const blocked=blockedWinnersForPeriod(label);const current=members.filter(n=>!blocked.has(n)).map(name=>({name,score:attendanceScoreInRange(name,p.start,p.end)}));const max=current.length?Math.max(...current.map(x=>x.score)):0;let tied=current.filter(x=>x.score===max),trace=[];
+  // 동점이면 이전 출석왕 기간을 역순으로 비교
+  const periods=sortedWinnerPeriods(),idx=periods.findIndex(x=>x.label===label);for(let back=idx-1;back>=0&&tied.length>1;back--){const q=periods[back];const vals=tied.map(x=>({name:x.name,score:attendanceScoreInRange(x.name,q.start,q.end)}));const mm=Math.max(...vals.map(x=>x.score));tied=vals.filter(x=>x.score===mm);trace.push(`${q.label.replace('-', '.')}: ${fmtScore(mm)}점 → ${tied.map(x=>baseName(x.name)).join(', ')}`)}return {period:p,winner:tied[0]?.name||null,max,current,blocked:[...blocked],trace,trainCount:trainCountInRange(p.start,p.end)} }
+function renderWinner(){const sel=document.getElementById('winnerPeriodSelect');if(!sel)return;const label=sel.value;if(!label){winnerName.textContent='기간 없음';winnerReason.textContent='출석왕 기간을 먼저 설정하세요.';winnerRanking.innerHTML='';return}const result=calculateWinnerForPeriod(label);if(!result||result.max===0){winnerName.textContent='출석 기록 없음';winnerReason.textContent=`${result?.period.start||''}~${result?.period.end||''} 기간에 출석 기록이 없습니다.`;winnerRanking.innerHTML='';return}winnerName.textContent=baseName(result.winner||'-');const cooldown=result.blocked.filter(n=>!attendanceKingExcluded.includes(n)).map(baseName);winnerReason.textContent=`${result.period.label.replace('-', '.')} · ${result.period.start}~${result.period.end} · ${fmtScore(result.max)}점 / 훈련 ${result.trainCount}회`+(cooldown.length?` · 3기간 재선정 제한: ${cooldown.join(', ')}`:'');const ranking=[...result.current].sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name)).slice(0,15);winnerRanking.innerHTML='<div class="table-wrap"><table><thead><tr><th>순위</th><th>이름</th><th>출석 점수</th></tr></thead><tbody>'+ranking.map((r,i)=>`<tr><td>${i+1}</td><td>${baseName(r.name)}</td><td>${fmtScore(r.score)}</td></tr>`).join('')+'</tbody></table></div>'+(result.trace.length?'<div class="small muted" style="margin-top:8px">동점 추적: '+result.trace.join(' / ')+'</div>':'');}
+function renderWinnerHistory(){if(!db.winnerHistory)db.winnerHistory=JSON.parse(JSON.stringify(winnerHistoryDefaults));const pmap=Object.fromEntries((db.winnerPeriods||[]).map(p=>[p.label,p]));const rows=document.getElementById('winnerHistoryRows');if(!rows)return;rows.innerHTML=[...(db.winnerHistory||[])].sort((a,b)=>b.label.localeCompare(a.label)).map(h=>{const p=pmap[h.label]||{};return `<tr><td>${h.label.replace('-', '.')}</td><td>${p.start||'-'} ~ ${p.end||'-'}</td><td><b>${h.winner}</b></td><td>${fmtScore(h.score)}</td><td>${h.trainCount}</td></tr>`}).join('')}
+function renderFees(){
+  const start=feePeriod.value;if(!start)return; const [y,m]=start.split('-').map(Number); const nextM=m+1; const ym1=`${y}-${String(m).padStart(2,'0')}`, ym2=`${y}-${String(nextM).padStart(2,'0')}`;
+  const sessions=db.sessions.filter(s=>s.status==='train'&&(s.date.startsWith(ym1)||s.date.startsWith(ym2))); const total=sessions.length; const threshold=total/2;
+  feeSessions.textContent=total+'회'; feeThreshold.textContent=threshold+'회 초과'; feeRange.textContent=`${m}~${nextM}월`;
+  const periodStart=`${ym1}-01`; const periodEnd=new Date(y,nextM,0).toISOString().slice(0,10);
+  const rows=members.map(name=>{const c=sessions.reduce((sum,s)=>sum+attendanceScoreForSession(s,name),0); const z=zeroFeeStatus(name,periodStart,periodEnd); const fee=z?0:(c>threshold?10000:20000); return {name,c,fee,z}}).sort((a,b)=>a.fee-b.fee||b.c-a.c||a.name.localeCompare(b.name));
+  feeTable.innerHTML='<div class="table-wrap"><table><thead><tr><th>이름</th><th>출석</th><th>상태</th><th>회비</th></tr></thead><tbody>'+rows.map(r=>`<tr><td>${r.name}</td><td>${fmtScore(r.c)}/${total}회</td><td>${r.z||'일반'}</td><td class="${r.fee===0?'status0':r.fee===10000?'fee10':'fee20'}">${r.fee.toLocaleString()}원</td></tr>`).join('')+'</tbody></table></div>';
+}
+
+function hallScore(v){return Number(v.ball||0)+Number(v.bingo||0)+Number(v.selfWin||0)+Number(v.attendance2||0)+Number(v.contest||0)+Number(v.award||0)*2}
+function setHall(name,key,val){if(!db.hallOfFame)db.hallOfFame=JSON.parse(JSON.stringify(hallDefaults));if(!db.hallOfFame[name])db.hallOfFame[name]={ball:0,bingo:0,selfWin:0,attendance2:0,contest:0,award:0};db.hallOfFame[name][key]=Math.max(0,Number(val)||0);persist();renderHallOfFame()}
+function renderHallOfFame(){
+  if(!db.hallOfFame)db.hallOfFame=JSON.parse(JSON.stringify(hallDefaults));
+  const originalIndex=Object.fromEntries(hallMembers.map((n,i)=>[n,i]));
+  const ranked=hallMembers.map(name=>({name,v:db.hallOfFame[name]||hallDefaults[name]||{},score:hallScore(db.hallOfFame[name]||hallDefaults[name]||{})})).sort((a,b)=>b.score-a.score||originalIndex[a.name]-originalIndex[b.name]);
+  const top=document.getElementById('hofTop3');
+  if(top) top.innerHTML=ranked.slice(0,3).map((r,i)=>`<div class="hof-medal"><div class="hof-rank">${['🥇 1위','🥈 2위','🥉 3위'][i]}</div><b>${r.name}</b><div class="hof-total">${r.score}회</div></div>`).join('');
+  const rows=document.getElementById('hofRows');if(!rows)return;
+  rows.innerHTML=ranked.map((r,i)=>{const v=r.v;const inp=(k)=>`<input class="hof-input" type="number" min="0" value="${Number(v[k]||0)}" onchange="setHall('${esc(r.name)}','${k}',this.value)">`;return `<tr><td><b>${i+1}</b></td><td><b>${r.name}</b></td><td class="hof-total">${r.score}</td><td>${inp('ball')}</td><td>${inp('bingo')}</td><td>${inp('selfWin')}</td><td>${inp('attendance2')}</td><td>${inp('contest')}</td><td>${inp('award')}</td></tr>`}).join('');
+}
